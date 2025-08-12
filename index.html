@@ -1,1 +1,571 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blue Lock Football - O Jogo</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #1a1a2e, #16213e);
+            font-family: 'Arial', sans-serif;
+            color: white;
+        }
+        
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #field {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: #2a9d8f;
+            background: linear-gradient(to bottom, #2a9d8f, #264653);
+            border: 5px solid #e9c46a;
+        }
+        
+        .player {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-size: cover;
+            transition: transform 0.2s;
+            z-index: 10;
+        }
+        
+        .player::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            box-shadow: 0 0 10px currentColor;
+        }
+        
+        #ball {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            z-index: 5;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border-radius: 10px;
+            z-index: 100;
+        }
+        
+        #abilities {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+        
+        .ability-btn {
+            padding: 8px 15px;
+            background: #e76f51;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .ability-btn:hover {
+            background: #f4a261;
+            transform: scale(1.05);
+        }
+        
+        .ability-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="field"></div>
+        <div id="score">0 - 0</div>
+        <div id="abilities">
+            <button class="ability-btn" id="ability1">Habilidade 1</button>
+            <button class="ability-btn" id="ability2">Habilidade 2</button>
+            <button class="ability-btn" id="ability3">Habilidade 3</button>
+        </div>
+    </div>
+
+    <script>
+        // Configurações básicas do jogo
+const gameConfig = {
+    fieldWidth: window.innerWidth,
+    fieldHeight: window.innerHeight,
+    goals: {
+        left: { x1: 0, x2: 30, y1: window.innerHeight/2 - 100, y2: window.innerHeight/2 + 100 },
+        right: { x1: window.innerWidth - 30, x2: window.innerWidth, y1: window.innerHeight/2 - 100, y2: window.innerHeight/2 + 100 }
+    },
+    score: { player: 0, opponent: 0 }
+};
+
+// Classe base para jogadores
+class Player {
+    constructor(x, y, team, abilities) {
+        this.x = x;
+        this.y = y;
+        this.team = team;
+        this.speed = 5;
+        this.abilities = abilities;
+        this.cooldowns = {};
+        this.element = document.createElement('div');
+        this.element.className = 'player';
+        this.element.style.left = `${x}px`;
+        this.element.style.top = `${y}px`;
+        this.element.style.backgroundColor = team === 'player' ? '#e63946' : '#457b9d';
+        document.getElementById('field').appendChild(this.element);
+    }
+
+    move(dx, dy) {
+        this.x = Math.max(0, Math.min(gameConfig.fieldWidth - 40, this.x + dx * this.speed));
+        this.y = Math.max(0, Math.min(gameConfig.fieldHeight - 40, this.y + dy * this.speed));
+        this.updatePosition();
+    }
+
+    updatePosition() {
+        this.element.style.left = `${this.x}px`;
+        this.element.style.top = `${this.y}px`;
+    }
+
+    useAbility(index) {
+        if (this.cooldowns[index] && this.cooldowns[index] > Date.now()) return;
+        
+        const ability = this.abilities[index];
+        if (ability) {
+            ability.effect(this);
+            this.cooldowns[index] = Date.now() + ability.cooldown * 1000;
+            setTimeout(() => {
+                // Atualizar UI de cooldown
+            }, 100);
+        }
+    }
+}
+
+// Classe para a bola
+class Ball {
+    constructor() {
+        this.x = gameConfig.fieldWidth / 2;
+        this.y = gameConfig.fieldHeight / 2;
+        this.vx = 0;
+        this.vy = 0;
+        this.holder = null;
+        this.element = document.createElement('div');
+        this.element.id = 'ball';
+        this.element.style.left = `${this.x}px`;
+        this.element.style.top = `${this.y}px`;
+        document.getElementById('field').appendChild(this.element);
+    }
+
+    update() {
+        if (this.holder) {
+            this.x = this.holder.x + 20;
+            this.y = this.holder.y + 20;
+        } else {
+            this.x += this.vx;
+            this.y += this.vy;
+            
+            // Fricção
+            this.vx *= 0.98;
+            this.vy *= 0.98;
+            
+            // Limites do campo
+            if (this.x < 0 || this.x > gameConfig.fieldWidth) this.vx *= -0.8;
+            if (this.y < 0 || this.y > gameConfig.fieldHeight) this.vy *= -0.8;
+            
+            this.x = Math.max(0, Math.min(gameConfig.fieldWidth, this.x));
+            this.y = Math.max(0, Math.min(gameConfig.fieldHeight, this.y));
+            
+            // Verificar gols
+            this.checkGoals();
+        }
+        
+        this.element.style.left = `${this.x}px`;
+        this.element.style.top = `${this.y}px`;
+    }
+
+    checkGoals() {
+        const g = gameConfig.goals;
+        // Gol na esquerda
+        if (this.x < g.left.x2 && this.y > g.left.y1 && this.y < g.left.y2) {
+            gameConfig.score.opponent++;
+            this.reset();
+        }
+        // Gol na direita
+        if (this.x > g.right.x1 && this.y > g.right.y1 && this.y < g.right.y2) {
+            gameConfig.score.player++;
+            this.reset();
+        }
+    }
+
+    reset() {
+        this.x = gameConfig.fieldWidth / 2;
+        this.y = gameConfig.fieldHeight / 2;
+        this.vx = 0;
+        this.vy = 0;
+        this.holder = null;
+        document.getElementById('score').textContent = 
+            `${gameConfig.score.player} - ${gameConfig.score.opponent}`;
+    }
+}
+
+// Habilidades especiais (estilo Blue Lock)
+const abilities = {
+    // Habilidades do protagonista (estilo Isagi)
+    protagonist: [
+        {
+            name: "Visão Direta",
+            description: "Aumenta velocidade e precisão por 5 segundos",
+            cooldown: 15,
+            effect: (player) => {
+                const originalSpeed = player.speed;
+                player.speed *= 2;
+                player.element.style.boxShadow = "0 0 20px 10px gold";
+                
+                setTimeout(() => {
+                    player.speed = originalSpeed;
+                    player.element.style.boxShadow = "";
+                }, 5000);
+            }
+        },
+        {
+            name: "Chuto Metafórico",
+            description: "Chute com poder triplicado",
+            cooldown: 20,
+            effect: (player) => {
+                if (ball.holder === player) {
+                    ball.holder = null;
+                    const angle = Math.atan2(
+                        gameConfig.fieldHeight/2 - player.y, 
+                        gameConfig.fieldWidth - player.x
+                    );
+                    ball.vx = Math.cos(angle) * 30;
+                    ball.vy = Math.sin(angle) * 30;
+                    
+                    // Efeito visual
+                    const effect = document.createElement('div');
+                    effect.style.position = 'absolute';
+                    effect.style.left = `${player.x}px`;
+                    effect.style.top = `${player.y}px`;
+                    effect.style.width = '0';
+                    effect.style.height = '0';
+                    effect.style.border = '2px solid white';
+                    effect.style.borderRadius = '50%';
+                    effect.style.transform = 'translate(-50%, -50%)';
+                    effect.style.animation = 'pulse 0.5s forwards';
+                    document.getElementById('field').appendChild(effect);
+                    
+                    setTimeout(() => effect.remove(), 500);
+                }
+            }
+        },
+        {
+            name: "Domínio Absoluto",
+            description: "Atrai a bola para você por 3 segundos",
+            cooldown: 25,
+            effect: (player) => {
+                const interval = setInterval(() => {
+                    if (!ball.holder) {
+                        const dx = player.x + 20 - ball.x;
+                        const dy = player.y + 20 - ball.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        
+                        if (dist < 300) {
+                            ball.vx += dx * 0.1;
+                            ball.vy += dy * 0.1;
+                        }
+                    }
+                }, 50);
+                
+                setTimeout(() => clearInterval(interval), 3000);
+            }
+        }
+    ],
+    // Habilidades do rival (estilo Rin)
+    rival: [
+        {
+            name: "Chuto Predatório",
+            cooldown: 15,
+            effect: (player) => {
+                // Implementação similar com efeitos diferentes
+            }
+        }
+    ]
+};
+
+// Inicialização do jogo
+const ball = new Ball();
+const mainPlayer = new Player(
+    gameConfig.fieldWidth / 4, 
+    gameConfig.fieldHeight / 2,
+    'player',
+    abilities.protagonist
+);
+
+// Adicionar alguns oponentes
+const opponents = [
+    new Player(
+        gameConfig.fieldWidth * 3/4,
+        gameConfig.fieldHeight / 2,
+        'opponent',
+        abilities.rival
+    )
+];
+
+// Controles
+window.addEventListener('keydown', (e) => {
+    switch(e.key) {
+        case 'ArrowUp': mainPlayer.move(0, -1); break;
+        case 'ArrowDown': mainPlayer.move(0, 1); break;
+        case 'ArrowLeft': mainPlayer.move(-1, 0); break;
+        case 'ArrowRight': mainPlayer.move(1, 0); break;
+        case ' ': 
+            if (ball.holder === mainPlayer) {
+                ball.holder = null;
+                ball.vx = 10;
+                ball.vy = (Math.random() - 0.5) * 5;
+            }
+            break;
+    }
+});
+
+// Botões de habilidades
+document.getElementById('ability1').addEventListener('click', () => mainPlayer.useAbility(0));
+document.getElementById('ability2').addEventListener('click', () => mainPlayer.useAbility(1));
+document.getElementById('ability3').addEventListener('click', () => mainPlayer.useAbility(2));
+
+// Lógica de colisão e IA simples
+function checkCollisions() {
+    // Colisão com a bola
+    if (!ball.holder) {
+        const players = [mainPlayer, ...opponents];
+        players.forEach(player => {
+            const dx = player.x + 20 - ball.x;
+            const dy = player.y + 20 - ball.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            
+            if (distance < 30) {
+                ball.holder = player;
+                ball.vx = 0;
+                ball.vy = 0;
+            }
+        });
+    }
+    
+    // IA simples para os oponentes
+    opponents.forEach(opponent => {
+        if (!ball.holder || ball.holder.team !== 'opponent') {
+            const dx = ball.x - (opponent.x + 20);
+            const dy = ball.y - (opponent.y + 20);
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            
+            if (distance < 200) {
+                opponent.move(dx/distance * 0.5, dy/distance * 0.5);
+            }
+        } else if (ball.holder === opponent) {
+            // Chutar em direção ao gol
+            opponent.move(1, (Math.random() - 0.5) * 0.2);
+            if (Math.random() < 0.02) {
+                ball.holder = null;
+                ball.vx = 15;
+                ball.vy = (Math.random() - 0.5) * 5;
+            }
+        }
+    });
+}
+
+// Loop do jogo
+function gameLoop() {
+    ball.update();
+    checkCollisions();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+
+// Redimensionamento
+window.addEventListener('resize', () => {
+    gameConfig.fieldWidth = window.innerWidth;
+    gameConfig.fieldHeight = window.innerHeight;
+    gameConfig.goals = {
+        left: { x1: 0, x2: 30, y1: window.innerHeight/2 - 100, y2: window.innerHeight/2 + 100 },
+        right: { x1: window.innerWidth - 30, x2: window.innerWidth, y1: window.innerHeight/2 - 100, y2: window.innerHeight/2 + 100 }
+    };
+});
+
+
+// Habilidade do Bachira (Drible Criativo)
+const bachiraAbility = {
+    name: "Drible Criativo",
+    description: "Teleporta curtas distâncias deixando rastro",
+    cooldown: 18,
+    effect: (player) => {
+        const trail = [];
+        for (let i = 0; i < 3; i++) {
+            setTimeout(() => {
+                player.x += 50;
+                player.updatePosition();
+                
+                // Criar rastro
+                const shadow = document.createElement('div');
+                shadow.className = 'player';
+                shadow.style.left = `${player.x}px`;
+                shadow.style.top = `${player.y}px`;
+                shadow.style.opacity = '0.7';
+                shadow.style.backgroundColor = player.element.style.backgroundColor;
+                document.getElementById('field').appendChild(shadow);
+                
+                // Fade out do rastro
+                setTimeout(() => {
+                    shadow.style.transition = 'opacity 1s';
+                    shadow.style.opacity = '0';
+                    setTimeout(() => shadow.remove(), 1000);
+                }, 300);
+                
+            }, i * 200);
+        }
+    }
+};
+
+// Habilidade do Barou (Tiro do Rei)
+const barouAbility = {
+    name: "Tiro do Rei",
+    description: "Chute super potente que quebra defesas",
+    cooldown: 25,
+    effect: (player) => {
+        if (ball.holder === player) {
+            ball.holder = null;
+            const angle = Math.atan2(
+                gameConfig.fieldHeight/2 - player.y, 
+                gameConfig.fieldWidth - player.x
+            );
+            ball.vx = Math.cos(angle) * 50;
+            ball.vy = Math.sin(angle) * 50;
+            
+            // Efeito de explosão
+            const explosion = document.createElement('div');
+            explosion.style.position = 'absolute';
+            explosion.style.left = `${player.x}px`;
+            explosion.style.top = `${player.y}px`;
+            explosion.style.width = '0';
+            explosion.style.height = '0';
+            explosion.style.background = 'radial-gradient(circle, red, orange, yellow)';
+            explosion.style.borderRadius = '50%';
+            explosion.style.transform = 'translate(-50%, -50%)';
+            explosion.style.animation = 'explode 0.5s forwards';
+            document.getElementById('field').appendChild(explosion);
+            
+            setTimeout(() => explosion.remove(), 500);
+        }
+    }
+};
+
+// Adicionando estilos para as animações
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes pulse {
+        0% { width: 0; height: 0; opacity: 1; }
+        100% { width: 200px; height: 200px; opacity: 0; }
+    }
+    
+    @keyframes explode {
+        0% { width: 0; height: 0; opacity: 1; }
+        100% { width: 300px; height: 300px; opacity: 0; }
+    }
+`;
+document.head.appendChild(style);
+
+// Criando personagens com habilidades únicas
+const specialPlayers = [
+    {
+        name: "Bachira",
+        color: "#f72585",
+        abilities: [bachiraAbility, abilities.protagonist[1], abilities.protagonist[2]]
+    },
+    {
+        name: "Barou",
+        color: "#7209b7",
+        abilities: [barouAbility, abilities.protagonist[0], abilities.protagonist[2]]
+    },
+    {
+        name: "Rin",
+        color: "#3a0ca3",
+        abilities: abilities.rival
+    }
+];
+
+// Função para selecionar personagem
+function selectCharacter(index) {
+    const selected = specialPlayers[index];
+    mainPlayer.abilities = selected.abilities;
+    mainPlayer.element.style.backgroundColor = selected.color;
+    
+    // Atualizar botões de habilidade
+    document.getElementById('ability1').textContent = selected.abilities[0].name;
+    document.getElementById('ability2').textContent = selected.abilities[1].name;
+    document.getElementById('ability3').textContent = selected.abilities[2].name;
+}
+
+// Menu de seleção de personagem (adicionar no HTML)
+const charSelect = document.createElement('div');
+charSelect.id = 'char-select';
+charSelect.style.position = 'fixed';
+charSelect.style.top = '0';
+charSelect.style.left = '0';
+charSelect.style.width = '100%';
+charSelect.style.height = '100%';
+charSelect.style.background = 'rgba(0,0,0,0.8)';
+charSelect.style.display = 'flex';
+charSelect.style.flexDirection = 'column';
+charSelect.style.justifyContent = 'center';
+charSelect.style.alignItems = 'center';
+charSelect.style.zIndex = '1000';
+
+specialPlayers.forEach((char, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = char.name;
+    btn.style.margin = '10px';
+    btn.style.padding = '15px 30px';
+    btn.style.background = char.color;
+    btn.style.border = 'none';
+    btn.style.borderRadius = '5px';
+    btn.style.color = 'white';
+    btn.style.fontSize = '18px';
+    btn.style.cursor = 'pointer';
+    btn.onclick = () => {
+        selectCharacter(i);
+        charSelect.style.display = 'none';
+    };
+    charSelect.appendChild(btn);
+});
+
+document.body.appendChild(charSelect);
+        
+    </script>
+</body>
+</html>
 
